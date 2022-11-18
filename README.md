@@ -20,7 +20,7 @@ there was a similar situation of SARS epidemic in 2003. Hence, we will be focusi
 data from 2003 to 2005 where the industry was recovering from the epidemic. Insights obtained
 from the data during this period will allow the aviation industry to move forward.
 
-### 5 Question used to analyse airline-on-time analysis are: 
+### 5 Question used to analyse airline-on-time performance are: 
 
 1. When is the best time of day, day of the week, and time of year to fly
 to minimise delays?
