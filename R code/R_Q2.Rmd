@@ -1,5 +1,5 @@
 ---
-title: "coursework_Question2_R"
+title: "Question2_R"
 output: pdf_document
 ---
 
