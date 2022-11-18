@@ -1,0 +1,136 @@
+---
+title: "coursework_Question3_R"
+output: pdf_document
+---
+Question3:How does the number of people flying between different locations change over time?
+
+```{r}
+library(knitr)
+```
+
+Set working directory
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/juhyu/Desktop/Programming ST2195')
+```
+
+```{r}
+# checking working directory
+getwd()
+```
+
+Read dataset
+```{r}
+df2003<-read.csv("2003.csv.bz2")
+df2004<-read.csv("2004.csv.bz2")
+df2005<-read.csv("2005.csv.bz2")
+df3<-rbind(df2003,df2004,df2005)
+```
+
+Extract even rows & selecting rows with flights not cancelled
+```{r}
+row_odd<-seq_len(nrow(df3)) %% 2
+df3<-df3[row_odd==0,]
+df3<-subset(df3,df3$Cancelled==0)
+```
+
+Read necessary libraries 
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+str(df3)
+table(df3$Year)
+attach(df3)
+```
+
+We will measure number of people flying by number of flights. 
+Creating barplot on number of flights each year
+```{r}
+flights_peryear<-data.frame(table(df3$Year))
+names(flights_peryear)[1]<-'Year'
+years<-c(2003,2004,2005)
+colors<-'#5CACEE'
+barplot(as.matrix(flights_peryear[2])~years,xlab="Year",col=colors)
+```
+
+To investigate further, we will look into trend in number of flights in the three years,in the top five airports
+```{r}
+table(df3$Origin)
+flights_perairport<-data.frame(table(df3$Origin))
+flights_perairport<-flights_perairport[order(flights_perairport$Freq,decreasing=TRUE),]
+flights_perairport<-head(flights_perairport,5)
+top5<-c('ATL','ORD','DFW','LAX','IAH')
+```
+
+Top 5 airports are :'ATL','ORD','DFW','LAX','IAH'
+```{r}
+head(df3,5)
+
+#set df3 to contain only the data of top5 countries
+df3<-filter(df3,df3$Origin%in%top5) 
+unique(df3$Origin)
+flights_summary<-df3%>%
+  group_by(Year,Origin)%>%
+  summarise(length(Year))
+flights_summary
+```
+
+Creating data frame of flight information for three airports in 2003,2004,2005
+```{r}
+unique(df3$Year)
+flights2003<-subset(flights_summary,flights_summary$Year=='2003')
+flights2003<-t(flights2003[,c(2,3)])
+flights2003<-flights2003[2,]
+flights2003<-data.frame(t(data.frame(flights2003)))
+colnames(flights2003)<-c('ATL','DFW','IAH','LAX','ORD')
+```
+
+```{r}
+flights2004<-subset(flights_summary,flights_summary$Year=='2004')
+flights2004<-t(flights2004[,c(2,3)])
+flights2004<-flights2004[2,]
+flights2004<-data.frame(t(data.frame(flights2004)))
+colnames(flights2004)<-c('ATL','DFW','IAH','LAX','ORD')
+```
+
+```{r}
+flights2005<-subset(flights_summary,flights_summary$Year=='2005')
+flights2005<-t(flights2005[,c(2,3)])
+flights2005<-flights2005[2,]
+flights2005<-data.frame(t(data.frame(flights2005)))
+colnames(flights2005)<-c('ATL','DFW','IAH','LAX','ORD')
+```
+
+```{r}
+#create flights_info data frame
+flights_info<-rbind(flights2003,flights2004,flights2005)
+flights_info<-t(flights_info)
+
+rownames(flights_info)
+flights_info
+```
+
+Plotting bar graph based on number of flights in the top five airports throughout 3 years (2003,2004,2005)
+```{r}
+colnames(flights_info)<-c(2003,2004,2005)
+flights_info<-data.frame(t(flights_info))
+flights_info<-select(flights_info,ATL,ORD,DFW,LAX,IAH)
+flights_info<-mutate_all(flights_info, function(x) as.numeric(as.character(x)))
+```
+
+
+```{r}
+barplot(as.matrix(flights_info),
+        xlab = "Airports",
+        ylab = "Number of flights",
+        beside=TRUE,
+        col=c('skyblue3','coral','olivedrab1')
+)
+legend("top",
+       c("2003","2004","2005"),
+       col=c('skyblue3','coral','olivedrab1'),
+       pch=16,
+       cex=0.6
+)
+```

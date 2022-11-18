@@ -1,0 +1,316 @@
+---
+title: "Coursework_question5_R"
+output: html_document
+---
+Question5: Use available variables to construct a model that predicts delays
+
+Import necessary libraries
+```{r}
+library(superml)
+library(reshape2)
+library(dplyr)
+library(ggplot2)
+library(plyr)
+library(knitr)
+library(caret)
+library(Metrics)
+```
+
+Set working directory
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/juhyu/Desktop/Programming ST2195')
+```
+
+```{r}
+# checking working directory
+getwd()
+```
+
+Preparing datasets
+```{r}
+#reading data
+df2003<-read.csv("2003.csv.bz2")
+df2004<-read.csv("2004.csv.bz2")
+df2005<-read.csv("2005.csv.bz2")
+df5<-rbind(df2003,df2004,df2005)
+
+#extracting even rows & selecting rows with flights not cancelled
+row_odd<-seq_len(nrow(df5)) %% 2
+df5<-df5[row_odd==0,]
+df5<-subset(df5,df5$Cancelled==0)
+df5<-na.omit(df5)
+names(df5)[1]<-'Year_x'
+
+#creating a data file for question5
+planes<-read.csv('plane-data.csv')
+colnames(planes)<-c('TailNum','Type','Manufacturer','IssueDate',
+          'Model','Status','AircraftType','EngineType','Year')
+```
+
+Merging airline and planes datasets
+```{r}
+df5<-merge(df5,planes,by='TailNum')
+df5<-na.omit(df5)
+df5<-df5%>%select(-CancellationCode) #drop cancellation code 
+str(df5) 
+```
+
+Use LabelEncoder to change all variables to numeric variables
+```{r}
+#Label Encode the columns into numeric variables
+lbl=LabelEncoder$new()
+
+df5$UniqueCarrier<-lbl$fit_transform(df5$UniqueCarrier)
+df5$TailNum<-lbl$fit_transform(df5$TailNum)
+df5$Origin<-lbl$fit_transform(df5$Origin)
+df5$Dest<-lbl$fit_transform(df5$Dest)
+df5$Type<-lbl$fit_transform(df5$Type)
+df5$Manufacturer<-lbl$fit_transform(df5$Manufacturer)
+df5$IssueDate<-lbl$fit_transform(df5$IssueDate)
+df5$Model<-lbl$fit_transform(df5$Model)
+df5$Status<-lbl$fit_transform(df5$Status)
+df5$AircraftType<-lbl$fit_transform(df5$AircraftType)
+df5$EngineType<-lbl$fit_transform(df5$EngineType)
+df5$Year<-lbl$fit_transform(df5$Year)
+
+str(df5) #check the data types of variables
+```
+
+Plotting correlation matrix to find out correlation between variables
+```{r}
+#creating correlation matrix
+cormat<-round(x=cor(df5,use='complete.obs',method='pearson'),digits=2)
+melted_cormat<-melt(cormat)
+ggplot(data=melted_cormat,aes(x=Var1,y=Var2,fill=value))+
+  geom_tile(color='black')+
+  labs(fill="Pearson's\nCorrelation",title='Correlations of All Features')+
+  scale_fill_gradient(low='white',high='royalblue2')+
+  theme_classic()+
+  theme(axis.text.x=element_text(angle=45,vjust=1,hjust=1))+
+  scale_x_discrete(expand=c(0,0))+
+  scale_y_discrete(expand=c(0,0))
+```
+CarrierDelay,LateAircraftDelay and DepDelay are highly correlated with each other. 
+
+
+```{r}
+df5<-select(df5,UniqueCarrier,ArrDelay,DepDelay,Origin,CarrierDelay,NASDelay,LateAircraftDelay,Manufacturer,Status, AircraftType,EngineType)
+```
+
+Due to high correlation between independent variables and large
+data size, we will conduct machine learning using ridge regression, XGB regression and Lasso regression,to determine the best model to predict arrival delay. 
+
+1) Ridge regression
+```{r}
+library(glmnet)
+
+#Prepare necessary datasets
+TrainingIndex<-createDataPartition(df5$ArrDelay,p=0.8,list=FALSE )
+TrainingSet<-df5[TrainingIndex,]
+TestingSet<-df5[-TrainingIndex,] 
+
+X<-df5%>%select(-ArrDelay)
+y<-data.frame(df5$ArrDelay)
+
+split1<- sample(c(rep(0, 0.8 * nrow(df5)), rep(1, 0.2 * nrow(df5))))
+X_train<-X[split1==0,]
+X_test<-X[split1==1,]
+y_train<-y[split1==0,]
+y_test<-y[split1==1,]
+
+X_train<-as.matrix(X_train)
+X_test<-as.matrix(X_test)
+```
+
+```{r}
+lambdas <- 10^seq(2, -3, by = -.1)
+ridge_reg <- glmnet(X_train, y_train, nlambda = 25, alpha = 0, family = 'gaussian', lambda = lambdas)
+
+summary(ridge_reg)
+
+#Tuning hyperparameter (lambda)
+cv_ridge <- cv.glmnet(X_train, y_train, alpha = 0, 
+                      lambda = lambdas)
+optimal_lambda <- cv_ridge$lambda.min
+optimal_lambda
+
+#Creating function to get evaluation results
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST 
+  RMSE <- sqrt(SSE/nrow(df))
+  MAE <- mae(true,predicted)
+  
+  # Model performance metrics
+  data.frame(
+    RMSE = RMSE,
+    Rsquare = R_square,
+    MAE = MAE
+    
+  )
+}
+```
+
+```{r}
+# Prediction and evaluation on test data
+predictions_test <- predict(ridge_reg, s = optimal_lambda, 
+                            newx = X_test)
+eval_results(y_test, predictions_test, TestingSet)
+
+#plot the results
+plot.new()
+plot(y_test,predictions_test,col='blue',pch=16,
+     xlab='Actual',ylab='Predicted',xlim=c(-1300,1700),ylim=c(-1300,1700))
+min_y<-min(y)
+max_y<-max(y)
+lines(c(min_y:max_y),c(min_y:max_y),type='l',lwd=3,lty=2,col='black')
+```
+
+
+2) Extreme Gradient Boosting(XGB) regression
+```{r}
+library(xgboost)
+#make this example reproducible
+set.seed(0)
+
+#split into training (80%) and testing set (20%)
+parts <- createDataPartition(df5$ArrDelay, p = .8, list = F)
+train <- data.frame(df5[parts, ]) 
+test <- data.frame(df5[-parts, ])
+
+#define predictor and response variables in training set
+df5<-select(df5,UniqueCarrier,DepDelay,Origin,CarrierDelay,NASDelay,LateAircraftDelay,Manufacturer,Status,AircraftType,EngineType,ArrDelay)
+X_train <- data.matrix(train[,-11])
+y_train <- train[,11]
+
+#define predictor and response variables in testing set
+X_test <- data.matrix(test[,-11])
+y_test <- test[,11]
+
+#define final training and testing sets
+xgb_train <- xgb.DMatrix(data = X_train, label=y_train)
+xgb_test <- xgb.DMatrix(data = X_test, label=y_test)
+```
+
+```{r}
+#define watchlist
+watchlist <- list(train=xgb_train, test=xgb_test)
+
+#fit XGB model and display training and testing data at each round
+model <- xgb.train(data=xgb_train, 
+                  nrounds = c(50,100),
+                  max_depth = c(3,5),
+                  colsample_bytree = seq(0.7,0.9,length.out=3),
+                  eta = 0.1,
+                  gamma=0,
+                  min_child_weight = 1,
+                  subsample = 1,
+                  watchlist=watchlist)
+
+#define final model
+final <- xgboost(data = xgb_train, max.depth = 5, nrounds = 100, verbose = 1)
+
+#Predict values and evaluate the results
+pred_y<-predict(model,X_test)
+mean((y_test - pred_y)^2) 
+MAE_xgb<-caret::MAE(y_test, pred_y) 
+RMSE_xgb<-caret::RMSE(y_test, pred_y) 
+
+rss_xgb <- sum((y_test - pred_y) ^ 2) #residual sum of squares
+tss_xgb <- sum((y_test - mean(y_test)) ^ 2) #total sum of squares
+rsq_xgb <- 1-rss_xgb/tss_xgb
+R_square_xgb<-rsq_xgb
+```
+
+```{r}
+# Model performance metrics
+data.frame(
+ RMSE = RMSE_xgb,
+ Rsquare = R_square_xgb,
+ MAE = MAE_xgb
+  )
+```
+```{r}
+#plot the results
+plot.new()
+plot(y_test,pred_y,col='blue',pch=16,
+     xlab='Actual',ylab='Predicted',xlim=c(-1300,1700),ylim=c(-1300,1700))
+min_y<-min(y)
+max_y<-max(y)
+lines(c(min_y:max_y),c(min_y:max_y),type='l',lwd=3,lty=2,col='black')
+```
+
+
+3) Lasso Regression
+```{r}
+library(glmnet)
+
+#Create necessary data sets
+X <- model.matrix(ArrDelay~. , df5)[,-1]
+y <- df5$ArrDelay
+lambda_seq <- 10^seq(2, -2, by = -.1)
+
+# Splitting the data into test and train
+set.seed(86)
+train <- sample(1:nrow(X), nrow(X)*0.8)
+test <- sample(1:nrow(X) ,nrow(X)*0.2)
+X_test <- (-train)
+y_test <- y[X_test]
+X_train <- (train)
+y_train <- y[X_train]
+```
+
+```{r}
+cv_output <- cv.glmnet(X[train,], y[train],
+                       alpha = 1, lambda = lambda_seq, 
+                       nfolds = 5)
+
+# identifying the best lambda
+best_lam <- cv_output$lambda.min
+best_lam #0.01
+
+# Rebuilding the model with best lamda value identified
+lasso_best <- glmnet(X[train,], y[train], alpha = 1, lambda = best_lam)
+pred <- predict(lasso_best, s = best_lam, newx = X[X_test,])
+
+final <- cbind(y[test], pred)
+head(final)                       #checking the first 6 rows
+colnames(final)<-c('actual','predicted')
+final<-data.frame(final)
+```
+
+```{r}
+actual <- final$actual
+preds <- final$predicted #predictions
+
+#evaluation for testing set
+rss <- sum((y_test - preds) ^ 2) #residual sum of squares
+tss <- sum((y_test - mean(y_test)) ^ 2) #total sum of squares
+rsq <- 1-rss/tss
+R_square_lasso<-rsq #R squared: 0.85
+
+MAE_lasso<-mae(y_test,preds) #mae: 7.42
+RMSE_lasso<-rmse(y_test,preds) #rmse: 12.9
+
+# Model performance metrics
+data.frame(
+ RMSE = RMSE_lasso,
+ Rsquare = R_square_lasso,
+ MAE = MAE_lasso
+  )
+
+#plot the results
+plot.new()
+plot(y_test,preds,col='blue',pch=16,
+     xlab='Actual',ylab='Predicted',xlim=c(-1300,1700),ylim=c(-1300,1700))
+min_y<-min(y)
+max_y<-max(y)
+lines(c(min_y:max_y),c(min_y:max_y),type='l',lwd=3,lty=2,col='black')
+```
+
+In conclusion, ridge regression is the best machine learning model to predict delays, with lowest RMSE and R-square values among the three models used. 
+
+
+
+

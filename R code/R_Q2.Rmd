@@ -1,0 +1,224 @@
+---
+title: "coursework_Question2_R"
+output: pdf_document
+---
+
+Question2: Do older planes suffer more delays?
+
+```{r}
+library(knitr)
+```
+
+Set working directory
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/juhyu/Desktop/Programming ST2195')
+```
+
+```{r}
+# checking working directory
+getwd()
+```
+
+Read dataset
+```{r}
+df2003<-read.csv("2003.csv.bz2")
+df2004<-read.csv("2004.csv.bz2")
+df2005<-read.csv("2005.csv.bz2")
+df2<-rbind(df2003,df2004,df2005)
+```
+
+Extract even rows & selecting rows with flights not cancelled
+```{r}
+row_odd<-seq_len(nrow(df2)) %% 2
+df2<-df2[row_odd==0,]
+df2<-subset(df2,df2$Cancelled==0)
+```
+
+Read necessary libraries
+```{r}
+library(ggplot2)
+library(lessR)
+library(dplyr)
+library(ggpubr)
+```
+
+Set necessary columns and read plane data
+```{r}
+df2<-df2[,c('Year',"DepTime","CRSDepTime",'TailNum','ArrDelay','DepDelay')]
+planes<-read.csv('plane-data.csv')
+```
+
+Creating departure hour column
+```{r}
+class(df2$DepTime)
+df2$DepHour<-floor(df2$DepTime/100)
+df2<-subset(df2,df2$DepHour<=24)
+```
+
+```{r}
+#checking null values and drop
+table(is.na(planes))
+planes<-na.omit(planes)
+
+#sorting values to be year<2005
+unique(planes$year)
+planes<-subset(planes,year<2005)
+```
+
+Joining planes to df2 
+```{r}
+#Creating planes' age column
+class(planes$year)
+planes$age<-2022-as.numeric(planes$year)
+length(planes$age)
+
+#joining df to planes
+names(planes)
+names(planes)[1]<-'TailNum'
+summary(planes$year)
+
+df2<-merge(df2,planes,by='TailNum')
+head(df2,5)
+names(df2)
+```
+
+Plot box plot of age range
+```{r}
+#plot box plot
+boxplot(df2$age,ylab="age")
+summary(df2$age) #outlier: 2022
+df2<-subset(df2,age<2022)
+```
+
+Create age group column
+```{r}
+labs<-c(paste(seq(10,60,by=10),seq(20,70,by=10),sep='-'))
+df2$agegroup<-cut(df2$age,breaks=c(seq(10,60,by=10),Inf),labels=labs,right=FALSE)
+head(select(df2,age,agegroup))
+```
+
+Plot bar plots of distribution of delays 
+```{r}
+#plotting distribution of total mean delay over a day 
+mean_depdelay<-list()
+mean_arrdelay<-list()
+
+for (x in sort(unique(df2$agegroup))) {
+  print(x)
+  m_depdelay<-colMeans(df2[df2$agegroup==x,]['DepDelay'],na.rm=TRUE)
+  mean_depdelay<-append(mean_depdelay,m_depdelay)
+  m_arrdelay<-colMeans(df2[df2$agegroup==x,]['ArrDelay'],na.rm=TRUE)
+  mean_arrdelay<-append(mean_arrdelay,m_arrdelay)
+}
+mean_depdelay
+mean_arrdelay
+
+deparr_delay<-mapply('+',mean_depdelay,mean_arrdelay)
+deparr_delay<-data.frame(t(data.frame(deparr_delay)))
+colnames(deparr_delay)<-sort(unique(df2$agegroup))
+deparr_delay
+Agegroup<-sort(unique(df2$agegroup))
+Agegroup
+```
+
+To investigate deep down, we will plot the pie chart to compare each of their contribution to delay per different age groups. 
+```{r}
+#Plot bar chart
+deparr_delay
+barplot(as.matrix(deparr_delay),main='Distribution of delay by different ages of planes',xlab='Age of Planes',ylab='Delay(min)',col='#4F94CD')
+
+legend(x="topright",inset=0.07,cex=0.8,
+       pch=16,
+       col=c('#11759D', '#FFA500'),
+       legend = 'total mean delay per age',
+       border = "black") # Color of the border of the squares
+```
+
+```{r}
+#creating depdelay_perage
+#depdelay_perage: total delay for each agegroup 
+depdelay_perage<-list()
+arrdelay_perage<-list()
+
+for (x in sort(unique(df2$agegroup))) {
+  print(x)
+  depdelay_pa<-sum(df2[df2$agegroup==x,]['DepDelay'],na.rm=TRUE)
+  depdelay_perage<-append(depdelay_perage,depdelay_pa)
+  arrdelay_pa<-sum(df2[df2$agegroup==x,]['ArrDelay'],na.rm=TRUE)
+  arrdelay_perage<-append(arrdelay_perage,arrdelay_pa)
+}
+depdelay_perage
+arrdelay_perage
+
+#turning depdelay_perage and arrdelay_perage into dataframe
+depdelay_perage<-data.frame(t(data.frame(depdelay_perage)))
+colnames(depdelay_perage)<-'delay'
+rownames(depdelay_perage)<-Agegroup
+
+arrdelay_perage<-data.frame(t(data.frame(arrdelay_perage)))
+colnames(arrdelay_perage)<-'delay'
+rownames(arrdelay_perage)<-Agegroup
+```
+
+```{r}
+#plotting pie chart for depdelay_perage
+depdelay_perage2<-depdelay_perage %>%
+  mutate(perc=round((delay/sum(depdelay_perage$delay)),2)) %>% 
+  mutate(prop=delay/sum(depdelay_perage$delay)*100) %>%
+  mutate(ypos=cumsum(prop)-0.5*prop)%>%
+  mutate(labels = scales::percent(perc))
+
+depdelay_perage2$group<-Agegroup
+rownames(depdelay_perage2)<-c(1:6)
+depdelay_perage2
+
+arrdelay_perage2<-arrdelay_perage %>%
+  mutate(perc=round((delay/sum(arrdelay_perage$delay)),2)) %>% 
+  mutate(prop=delay/sum(arrdelay_perage$delay)*100) %>%
+  mutate(ypos=cumsum(prop)-0.5*prop)%>%
+  mutate(labels = scales::percent(perc))
+
+arrdelay_perage2$group<-Agegroup
+rownames(arrdelay_perage2)<-c(1:6)
+arrdelay_perage2
+```
+
+
+```{r}
+#departure delay
+
+pie_dep<-ggplot(depdelay_perage2, aes(x = "", y =delay, fill = group)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y", start = 0) +
+  scale_fill_manual(values = c("Blue", "Red", "Green", "Orange","Pink","LightBlue")) +
+  labs(x = "", y = "", title = "Departure Delay",
+       fill = "AgeGroup") + 
+  geom_text(aes(x =1.9,y= delay, label =labels), color="black",
+            fontface = "bold",position=position_stack(vjust=0.5)) +
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.title = element_text(hjust = 0.5, size = 5)) 
+
+pie_dep
+
+#arrival delay
+pie_arr<-ggplot(arrdelay_perage2, aes(x = "", y =delay, fill = group)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y", start = 0) +
+  scale_fill_manual(values = c("Blue", "Red", "Green", "Orange","Pink","LightBlue")) +
+  labs(x = "", y = "", title = "Arrival Delay",
+       fill = "AgeGroup") + 
+  geom_text(aes(x =1.9,y= delay, label =labels), color="black",
+            fontface = "bold",position=position_stack(vjust=0.5)) +
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.title = element_text(hjust = 0.5, size = 5)) 
+
+pie_arr
+
+#combining them
+ggarrange(pie_dep,pie_arr+rremove("x.text"),
+          ncol=2,nrow=1,
+          hjust=-2)
+```
+
+
+

@@ -1,0 +1,103 @@
+---
+title: "coursework_Question4_R"
+output: pdf_document
+---
+Question4: Can you detect cascading failures as delays in one airport create delays in others? 
+
+Reading necessary libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(corrr)
+library(tidyverse)
+library(ggcorrplot)
+library(knitr)
+library(extrafont)
+```
+
+Set working directory
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/juhyu/Desktop/Programming ST2195')
+```
+
+```{r}
+# checking working directory
+getwd()
+```
+
+Read dataset
+```{r}
+df2003<-read.csv("2003.csv.bz2")
+df2004<-read.csv("2004.csv.bz2")
+df2005<-read.csv("2005.csv.bz2")
+df4<-rbind(df2003,df2004,df2005)
+```
+
+Extract even rows & selecting rows with flights not cancelled
+```{r}
+row_odd<-seq_len(nrow(df4)) %% 2
+df4<-df4[row_odd==0,]
+df4<-subset(df4,df4$Cancelled==0)
+```
+
+
+```{r}
+mydata<-df4[,c(1,2,3,4,5,6,7,8,12,13,14,15,16,19,24,25,26,27,28,29)]
+
+names(mydata) #check if columns are added successfully
+```
+
+Creating correlation matrix
+```{r}
+cormat<-round(x=cor(mydata,use='complete.obs',method='pearson'),digits=2)
+melted_cormat<-melt(cormat)
+ggplot(data=melted_cormat,aes(x=Var1,y=Var2,fill=value))+
+  geom_tile()+
+  labs(fill="Pearson's\nCorrelation",title='Correlations in airline data')+
+  geom_text(label=melted_cormat$value,size=2)+
+  theme_classic()+
+  theme(axis.text.x=element_text(angle=45,vjust=1,hjust=1))+
+  scale_x_discrete(expand=c(0,0))+
+  scale_y_discrete(expand=c(0,0))+
+  theme(text=element_text(family ="Roboto"))
+```
+Correlation matrix for 'ArrDelay' and 'DepDelay' is high(0.9). 
+Hence, we can assume that there might be a cascading failure between delays. 
+
+We will now look for evidence of delay. 
+
+Creating necessary columns and change column order
+```{r}
+#Creating date column
+df4<-within(df4, Date <- sprintf("%d-%02d-%d", Year, Month, DayofMonth))
+
+#Creating a total delay column
+df4$totaldelay<-df4$DepDelay+df4$ArrDelay
+
+#change column order
+col_order<- c('Date','TailNum','CRSDepTime','DepTime','CRSArrTime','ArrTime','DepDelay','ArrDelay','totaldelay','Origin','Dest','LateAircraftDelay')
+df4<-df4[,col_order]
+head(df4,10)
+#order them by date
+df4%>%arrange(Date)
+```
+
+
+We will investigate rows with flights arriving at ATL airport on 2003-10-10 with arrival delay and rows with flights from ATL with departure delay. 
+If scheduled departure timing was affected due to arrival delay around the same timing, cascading failure in delay is detected. 
+```{r}
+#Delayed arrival at ATL
+head(filter(df4,df4$Dest=='ATL'& df4$ArrDelay>0 & df4$LateAircraftDelay>0 &
+         df4$Date=='2003-10-10')%>%arrange(DepTime),7)
+
+#Delayed departure from ATL
+head(filter(df4,df4$Origin=='ATL'& df4$DepDelay>0 & df4$LateAircraftDelay>0 &
+         df4$Date=='2003-10-10')%>%arrange(DepTime),7)
+```
+Late arrival of 'N105DA' flight caused departure delay of 'N826AS' flight. Presence of 'LateAircraftDelay' also proves cascading failure in delay.
+
+Hence, there are cascading failures in delays. 
+
+
+
